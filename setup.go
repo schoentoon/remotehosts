@@ -6,6 +6,7 @@ import (
 
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/metrics"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 
 	"github.com/caddyserver/caddy"
@@ -51,6 +52,7 @@ func setup(c *caddy.Controller) error {
 	parseChan := periodicHostsUpdate(h.RemoteHosts)
 
 	c.OnStartup(func() error {
+		metrics.MustRegister(c, blockListSize, blockListHits)
 		return h.RemoteHosts.readHosts()
 	})
 

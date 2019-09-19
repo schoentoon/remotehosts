@@ -14,6 +14,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // parseIP calls discards any v6 zone info, before calling net.ParseIP.
@@ -56,6 +57,7 @@ func (h RemoteHostsPlugin) ServeDNS(ctx context.Context, w dns.ResponseWriter, r
 		return plugin.NextOrFailure(h.Name(), h.Next, ctx, w, r)
 	}
 	log.Debugf("incoming query %s is blocked", qname)
+	blockListHits.WithLabelValues().Inc()
 
 	answer := new(dns.A)
 	answer.Hdr = dns.RR_Header{Name: qname, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600}
@@ -126,6 +128,8 @@ func (h *RemoteHosts) fetchURI(uri *url.URL) error {
 		}
 	}
 
+	blockListSize.WithLabelValues().Set(float64(len(h.BlackHole)))
+
 	log.Infof("blackhole now contains %d entries", len(h.BlackHole))
 	return nil
 }
@@ -138,3 +142,19 @@ func (h *RemoteHosts) isBlocked(uri string) bool {
 
 	return ok
 }
+
+var (
+	blockListSize = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: plugin.Namespace,
+		Subsystem: "remotehosts",
+		Name:      "size",
+		Help:      "The number of elements in the blocklist.",
+	}, []string{})
+
+	blockListHits = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: plugin.Namespace,
+		Subsystem: "remotehosts",
+		Name:      "blocklist_hits",
+		Help:      "The count of blocklist hits.",
+	}, []string{})
+)
