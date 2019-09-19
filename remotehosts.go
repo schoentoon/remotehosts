@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
@@ -26,14 +27,19 @@ func parseIP(addr string) net.IP {
 }
 
 type RemoteHostsPlugin struct {
-	RemoteHosts *RemoteHosts
+	*RemoteHosts
 
 	Next plugin.Handler
 }
 
 type RemoteHosts struct {
+	// The time between two reload of the configuration
+	reload time.Duration
+
+	// the URLs to fetch
 	URLs []*url.URL
 
+	// The actual block list and a mutex protecting access to it
 	BlackHoleLock sync.RWMutex
 	BlackHole     map[string]struct{}
 }
@@ -49,6 +55,7 @@ func (h RemoteHostsPlugin) ServeDNS(ctx context.Context, w dns.ResponseWriter, r
 	if !h.RemoteHosts.isBlocked(qname) {
 		return plugin.NextOrFailure(h.Name(), h.Next, ctx, w, r)
 	}
+	log.Debugf("incoming query %s is blocked", qname)
 
 	answer := new(dns.A)
 	answer.Hdr = dns.RR_Header{Name: qname, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600}
@@ -70,7 +77,8 @@ func (h RemoteHostsPlugin) ServeDNS(ctx context.Context, w dns.ResponseWriter, r
 	return dns.RcodeSuccess, nil
 }
 
-func (h RemoteHosts) readHosts() error {
+func (h *RemoteHosts) readHosts() error {
+	log.Infof("Loading hosts")
 	for _, uri := range h.URLs {
 		err := h.fetchURI(uri)
 		if err != nil {
@@ -80,7 +88,7 @@ func (h RemoteHosts) readHosts() error {
 	return nil
 }
 
-func (h RemoteHosts) fetchURI(uri *url.URL) error {
+func (h *RemoteHosts) fetchURI(uri *url.URL) error {
 	req := http.Request{
 		Method: http.MethodGet,
 		URL:    uri,
@@ -118,11 +126,11 @@ func (h RemoteHosts) fetchURI(uri *url.URL) error {
 		}
 	}
 
-	log.Debugf("blackhole now contains %d entries", len(h.BlackHole))
+	log.Infof("blackhole now contains %d entries", len(h.BlackHole))
 	return nil
 }
 
-func (h RemoteHosts) isBlocked(uri string) bool {
+func (h *RemoteHosts) isBlocked(uri string) bool {
 	h.BlackHoleLock.RLock()
 	defer h.BlackHoleLock.RUnlock()
 
