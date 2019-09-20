@@ -6,6 +6,8 @@ RUN git clone https://github.com/coredns/coredns
 
 WORKDIR /root/coredns
 
+ENV GOPROXY direct
+
 RUN sed -i 's/forward\:forward/remotehosts\:github.com\/schoentoon\/remotehosts\nforward\:forward/' plugin.cfg
 
 RUN make
